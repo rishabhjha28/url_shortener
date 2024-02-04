@@ -3,9 +3,9 @@ const User = require('../model/user');
 const bycrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { jwtTokenMaxAge } = require('../utilities/variables');
-const transporter = require('../services/mail');
+const { sendMail } = require('../services/mail');
 const { emailTemplateForLoginOTP } = require('../services/emailTemplate');
-const { generateOtp, getDifferenceInMinutesWithCurruntTime } = require('../utilities/usefull');
+const { getDifferenceInMinutesWithCurruntTime, generateOtp } = require('../utilities/usefull');
 
 const login = async (req, res) => {
     const { email, password } = req.body;
@@ -61,18 +61,8 @@ const signin = async (req, res) => {
         const salt = await bycrypt.genSalt(10);
         const hashedPassword = await bycrypt.hash(password, salt);
         const createdUser = await User.create({ email, password: hashedPassword, fullName, role });
-        const mailOptions = {
-            from: 'thegodrishabhanandjha@gmail.com',
-            to: email,
-            subject: 'Otp for god\'s url_shortener',
-            html: emailTemplateForLoginOTP(createdUser.loginVerificationOTP)
-        };
-        transporter.sendMail(mailOptions, function (error, info) {
-            if (error) {
-                return res.status(500).json({ error: error.message || 'Internal Server Error' });
-            }
-            res.status(201).json({ message: `otp has been send to email ${email}` });
-        });
+        await sendMail(email, 'Otp for god\'s url_shortener', emailTemplateForLoginOTP(createdUser.loginVerificationOTP))
+        res.status(201).json({ message: `otp has been send to email ${email}` });
     } catch (error) {
         console.log(error);
         res.status(500).json({ error: error.message || 'Internal Server Error' });
@@ -113,9 +103,41 @@ const logout = async (req, res) => {
     res.clearCookie('jwtToken').status(200).json({ message: 'Logged out' });
 }
 
+const regenerateLoginOTP = async (req, res) => {
+    const { email } = req.body;
+    if (!email) {
+        return res.status(400).json({ error: 'Please fill in all fields' });
+    }
+    if(!isEmailValid(email)){
+        return res.status(400).json({ error: 'Invalid email' });
+    }
+    try {
+        const userData = await User.findOne({ email });
+        if (!userData) {
+            return res.status(400).json({ error: 'Invalid email' });
+        }
+        if(userData.verified){
+            return res.status(400).json({ error: 'Email already verified' });
+        }
+        const otp = generateOtp();
+        if(getDifferenceInMinutesWithCurruntTime(userData.loginVerificationOTPGenerationTime) < 1){
+            return res.status(400).json({ error: 'OTP has already been send please try again after atleast one min' });
+        }
+        await User.findByIdAndUpdate(userData._id, { loginVerificationOTP: otp, loginVerificationOTPGenerationTime: new Date()});
+        await sendMail(email, 'Otp for god\'s url_shortener', emailTemplateForLoginOTP(otp))
+        res.status(200).json({ message: `otp has been re-send to email ${email}` });
+    }
+    catch (error) {
+        console.log(error);
+        res.status(500).json({ error: error.message || 'Internal Server Error' });
+    }
+        
+}
+
 module.exports = {
     login,
     signin,
     logout,
-    verifyLoginOTP
+    verifyLoginOTP,
+    regenerateLoginOTP
 }

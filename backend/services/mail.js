@@ -10,4 +10,16 @@ const transporter = nodemailer.createTransport({
     }
 });
 
-module.exports = transporter;
+const sendMail = async (to, subject, html) => {
+    const mailOptions = {
+        from: 'thegodrishabhanandjha@gmail.com',
+        to,
+        subject,
+        html
+    }
+    return await transporter.sendMail(mailOptions)
+}
+
+module.exports = {
+    sendMail
+}
